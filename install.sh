@@ -1,15 +1,17 @@
 #! /bin/bash
 # Copyright (C) Juewuy
 
+[ -z "$url" ] && url="https://fastly.jsdelivr.net/gh/juewuy/ShellCrash@master"
 type bash &>/dev/null && shtype=bash || shtype=sh 
 echo='echo -e' 
 [ -n "$(echo -e|grep e)" ] && {
 	echo "\033[31m不支持dash环境安装！请先输入bash命令后再运行安装命令！\033[0m"
 	exit
 }
+
 echo "***********************************************"
 echo "**                 欢迎使用                  **"
-echo "**                ShellClash                 **"
+echo "**                ShellCrash                 **"
 echo "**                             by  Juewuy    **"
 echo "***********************************************"
 #内置工具
@@ -17,7 +19,7 @@ dir_avail(){
 	df $2 $1 |awk '{ for(i=1;i<=NF;i++){ if(NR==1){ arr[i]=$i; }else{ arr[i]=arr[i]" "$i; } } } END{ for(i=1;i<=NF;i++){ print arr[i]; } }' |grep -E 'Ava|可用' |awk '{print $2}'
 }
 setconfig(){
-	configpath=$clashdir/mark
+	configpath=$CRASHDIR/configs/ShellCrash.cfg
 	[ -n "$(grep ${1} $configpath)" ] && sed -i "s#${1}=.*#${1}=${2}#g" $configpath || echo "${1}=${2}" >> $configpath
 }
 webget(){
@@ -42,27 +44,27 @@ webget(){
 	fi
 }
 error_down(){
-	$echo "请参考 \033[32mhttps://github.com/juewuy/ShellClash/blob/master/README_CN.md"
+	$echo "请参考 \033[32mhttps://github.com/juewuy/ShellCrash/blob/master/README_CN.md"
 	$echo  "\033[33m使用其他安装源重新安装！\033[0m" 
 }
 #安装及初始化
 gettar(){
-	webget /tmp/ShellClash.tar.gz $tarurl
+	webget /tmp/ShellCrash.tar.gz "$url/bin/ShellCrash.tar.gz"
 	if [ "$result" != "200" ];then
 		$echo "\033[33m文件下载失败！\033[0m"
 		error_down
 		exit 1
 	else
-		$clashdir/start.sh stop 2>/dev/null
+		$CRASHDIR/start.sh stop 2>/dev/null
 		#解压
 		echo -----------------------------------------------
 		echo 开始解压文件！
-		mkdir -p $clashdir > /dev/null
-		tar -zxf '/tmp/ShellClash.tar.gz' -C $clashdir/ || tar -zxf --no-same-owner '/tmp/ShellClash.tar.gz' -C $clashdir/
-		if [ -f $clashdir/init.sh ];then
-			source $clashdir/init.sh >/dev/null
+		mkdir -p $CRASHDIR > /dev/null
+		tar -zxf '/tmp/ShellCrash.tar.gz' -C $CRASHDIR/ || tar -zxf '/tmp/ShellCrash.tar.gz' --no-same-owner -C $CRASHDIR/
+		if [ -f $CRASHDIR/init.sh ];then
+			source $CRASHDIR/init.sh >/dev/null
 		else
-			rm -rf /tmp/ShellClash.tar.gz
+			rm -rf /tmp/ShellCrash.tar.gz
 			$echo "\033[33m文件解压失败！\033[0m"
 			error_down
 			exit 1
@@ -92,7 +94,7 @@ setdir(){
 		fi
 	}
 echo -----------------------------------------------
-$echo "\033[33m注意：安装ShellClash至少需要预留约1MB的磁盘空间\033[0m"
+$echo "\033[33m注意：安装ShellCrash至少需要预留约1MB的磁盘空间\033[0m"
 if [ -n "$systype" ];then
 	[ "$systype" = "Padavan" ] && dir=/etc/storage
 	[ "$systype" = "mi_snapshot" ] && {
@@ -174,7 +176,7 @@ if [ ! -w $dir ];then
 else
 	$echo "目标目录\033[32m$dir\033[0m空间剩余：$(dir_avail $dir -h)"
 	read -p "确认安装？(1/0) > " res
-	[ "$res" = "1" ] && clashdir=$dir/clash || setdir
+	[ "$res" = "1" ] && CRASHDIR=$dir/ShellCrash || setdir
 fi
 }
 install(){
@@ -183,14 +185,32 @@ echo 开始从服务器获取安装文件！
 echo -----------------------------------------------
 gettar
 echo -----------------------------------------------
-echo ShellClash 已经安装成功!
+echo ShellCrash 已经安装成功!
 [ "$profile" = "~/.bashrc" ] && echo "请执行【source ~/.bashrc &> /dev/null】命令以加载环境变量！"
 [ -n "$(ls -l /bin/sh|grep -oE 'zsh')" ] && echo "请执行【source ~/.zshrc &> /dev/null】命令以加载环境变量！"
 echo -----------------------------------------------
-$echo "\033[33m输入\033[30;47m clash \033[0;33m命令即可管理！！！\033[0m"
+$echo "\033[33m输入\033[30;47m crash \033[0;33m命令即可管理！！！\033[0m"
 echo -----------------------------------------------
 }
-
+setversion(){
+	echo -----------------------------------------------
+	$echo "\033[33m请选择想要安装的版本：\033[0m"	
+	$echo " 1 \033[32m公测版(推荐)\033[0m"
+	$echo " 2 \033[36m稳定版\033[0m"
+	$echo " 3 \033[31m开发版\033[0m"
+	echo -----------------------------------------------
+	read -p "请输入相应数字 > " num
+	case "$num" in
+	2)
+		url=$(echo $url | sed 's/master/stable/')
+	;;
+	3)
+		url=$(echo $url | sed 's/master/dev/')
+	;;
+	*)
+	;;
+	esac
+}
 #特殊固件识别及标记
 [ -f "/etc/storage/started_script.sh" ] && {
 	systype=Padavan #老毛子固件
@@ -213,50 +233,30 @@ if [ "$USER" != "root" -a -z "$systype" ];then
 	[ "$res" != "1" ] && exit 1
 fi
 
-#检查更新
-url_cdn="https://fastly.jsdelivr.net/gh/juewuy/ShellClash"
-[ -z "$url" ] && url=$url_cdn
-echo -----------------------------------------------
-$echo "\033[33m请选择想要安装的版本：\033[0m"	
-$echo " 1 \033[32mShellclash公测版\033[0m"
-$echo " 2 \033[36mShellclash稳定版\033[0m"
-echo -----------------------------------------------
-read -p "请输入相应数字 > " num
-if [ -z $num ];then
-	echo 安装已取消！ && exit 1;
-elif [ "$num" = "2" ];then
-	webget /tmp/clashrelease $url_cdn@master/bin/release_version echoon rediroff 2>/tmp/clashrelease
-	if [ "$result" = "200" ];then
-		release_new=$(cat /tmp/clashrelease | head -1)
-		url_dl="$url_cdn@$release_new"
-	else
-		$echo "\033[33m无法获取稳定版安装地址，将尝试安装公测版！\033[0m"
-	fi
+if [ -n "$(echo $url | grep master)" ];then
+	setversion
 fi
-[ -z "$url_dl" ] && url_dl=$url
-webget /tmp/clashversion "$url_dl/bin/version" echooff
-[ "$result" = "200" ] && versionsh=$(cat /tmp/clashversion | grep "versionsh" | awk -F "=" '{print $2}')
-[ -z "$release_new" ] && release_new=$versionsh
-rm -rf /tmp/clashversion
-rm -rf /tmp/clashrelease
-tarurl=$url_dl/bin/ShellClash.tar.gz
+#获取版本信息
+webget /tmp/version "$url/bin/version" echooff
+[ "$result" = "200" ] && versionsh=$(cat /tmp/version | grep "versionsh" | awk -F "=" '{print $2}')
+rm -rf /tmp/version
 
 #输出
-$echo "最新版本：\033[32m$release_new\033[0m"
+$echo "最新版本：\033[32m$versionsh\033[0m"
 echo -----------------------------------------------
 $echo "\033[44m如遇问题请加TG群反馈：\033[42;30m t.me/ShellClash \033[0m"
 $echo "\033[37m支持各种基于openwrt的路由器设备"
 $echo "\033[33m支持Debian、Centos等标准Linux系统\033[0m"
 
-if [ -n "$clashdir" ];then
+if [ -n "$CRASHDIR" ];then
 	echo -----------------------------------------------
-	$echo "检测到旧的安装目录\033[36m$clashdir\033[0m，是否覆盖安装？"
+	$echo "检测到旧的安装目录\033[36m$CRASHDIR\033[0m，是否覆盖安装？"
 	$echo "\033[32m覆盖安装时不会移除配置文件！\033[0m"
 	read -p "覆盖安装/卸载旧版本？(1/0) > " res
 	if [ "$res" = "1" ];then
 		install
 	elif [ "$res" = "0" ];then
-		rm -rf $clashdir
+		rm -rf $CRASHDIR
 		echo -----------------------------------------------
 		$echo "\033[31m 旧版本文件已卸载！\033[0m"
 		setdir

@@ -1,12 +1,11 @@
 <h1 align="center">
-  <img src="https://github.com/Dreamacro/Crash/raw/master/docs/logo.png" alt="Crash" width="200">
   <br>ShellCrash<br>
 </h1>
 
 
   <p align="center">
-	<a target="_blank" href="https://github.com/Dreamacro/Crash/releases">
-    <img src="https://img.shields.io/github/release/Dreamacro/Crash.svg?style=flat-square&label=Crash">
+	<a target="_blank" href="https://github.com/MetaCubeX/mihomo/releases">
+    <img src="https://img.shields.io/github/release/MetaCubeX/mihomo.svg?style=flat-square&label=Core">
   </a>
   <a target="_blank" href="https://github.com/juewuy/ShellCrash/releases">
     <img src="https://img.shields.io/github/release/juewuy/ShellCrash.svg?style=flat-square&label=ShellCrash&colorB=green">
@@ -18,16 +17,21 @@
 功能简介：
 --
 
-~通过管理脚本在Shell环境下便捷使用[Crash](https://github.com/Dreamacro/Crash)<br>
-~支持在Shell环境下管理[Crash各种功能](https://lancellc.gitbook.io/Crash)<br>
-~支持在线导入[Crash](https://github.com/Dreamacro/Crash)支持的分享、订阅及配置链接<br>~支持配置定时任务，支持配置文件定时更新<br>~支持在线安装及使用本地网页面板管理内置规则<br>
-~支持路由模式、本机模式等多种模式切换<br>~支持在线更新<br>
+~通过管理脚本在Shell环境下便捷使用<br>
+~支持在Shell环境下管理<br>
+~支持在线导入订阅及配置链接<br>
+~支持配置定时任务，支持配置文件定时更新<br>
+~支持在线安装及使用本地网页面板管理内置规则<br>
+~支持路由模式、本机模式等多种模式切换<br>
+~支持在线更新<br>
 
 设备支持：
 --
 
 ~支持各种基于OpenWrt或使用OpenWrt二次定制开发的路由器设备<br>
-~支持各种运行标准Linux系统（如Debian/CenOS/Armbian等）的设备<br>~兼容Padavan固件（保守模式）、潘多拉固件以及华硕/梅林固件<br>~兼容各类使用Linux内核定制开发的各类型设备<br>
+~支持各种运行标准Linux系统（如Debian/CenOS/Armbian等）的设备<br>
+~兼容Padavan固件（保守模式）、潘多拉固件以及华硕/梅林固件<br>
+~兼容各类使用Linux内核定制开发的各类型设备<br>
 
 ——————————<br>
 ~更多设备支持，请提issue或前往TG群反馈（需提供设备名称及运行uname -a返回的设备核心信息）<br>
@@ -97,9 +101,26 @@ export url='https://fastly.jsdelivr.net/gh/juewuy/ShellCrash@master' && wget -q 
 export url='http://t.jwsc.eu.org' && wget -q -O /tmp/install.sh $url/install.sh  && sh /tmp/install.sh && source /etc/profile &> /dev/null
 ```
 
-~**DOCKER环境下安装：**<br>
+~**虚拟机/Docker环境安装：**<br>
 
-请参考 [ShellCrash_docker 一键脚本和镜像](https://github.com/echvoyager/shellCrash_docker)
+虚拟机或Docker环境推荐使用Alpine镜像安装<br>
+
+这里以Docker为例(其他虚拟机请自行查找安装Alpine镜像安装教程)<br>
+
+```shell
+#注意，以下命令请分步执行！
+#Docker一键启动Alpine镜像
+docker run -d --name ShellCrash alpine sleep infinity
+#进入容器内sh环境
+docker exec -it ShellCrash sh
+#安装必要依赖
+apk add curl 
+apk add nftables
+#执行安装命令
+export url='https://fastly.jsdelivr.net/gh/juewuy/ShellCrash@master' && sh -c "$(curl -kfsSl $url/install.sh)" && source /etc/profile &> /dev/null
+```
+
+
 
 ### **本地安装：**<br>
 
@@ -110,15 +131,9 @@ export url='http://t.jwsc.eu.org' && wget -q -O /tmp/install.sh $url/install.sh 
 安装完成管理脚本后，执行如下命令使用~
 
 ```Shell
-Crash 		#进入对话脚本
-Crash -h 	#脚本帮助及说明
-Crash -u 	#卸载脚本
-Crash -t 	#测试模式运行
-Crash -s start 	#启动服务
-Crash -s stop 	#停止服务
+Clash 		#进入对话
+Clash -h 	#帮助列表
 ```
-
-
 
 #### **运行时的额外依赖**：<br>
 
@@ -141,9 +156,9 @@ ubus/iproute-doc	极低		缺少时无法正常获取本机host地址
 
 交流反馈：
 --
-### [TG讨论组](https://t.me/ShellCrash) 
+### [TG讨论组](https://t.me/ShellClash) 
 
 机场推荐：
 --
-#### [大米-群友力荐，流媒体解锁，月付推荐](https://www.bigme.pro/user#/register?code=2PuWY9I7)<br>
+#### [大米-群友力荐，流媒体解锁，月付推荐](https://cloud.bigme.pro/user#/register?code=2PuWY9I7)<br>
 #### [Dler-老牌稳定，流媒体解锁，年付推荐](https://dler.best/auth/register?affid=89698)<br>
