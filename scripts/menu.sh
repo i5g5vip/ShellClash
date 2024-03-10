@@ -47,8 +47,13 @@ ckstatus(){
 	[ -z "$host" ] && host=$(ip a 2>&1 | grep -w 'inet' | grep 'global' | grep -E ' 1(92|0|72)\.' | sed 's/.*inet.//g' | sed 's/\/[0-9][0-9].*$//g' | head -n 1)
 	[ -z "$host" ] && host='设备IP地址'
 	#dashboard目录位置
-	[ -f ${CRASHDIR}/ui/index.html ] && dbdir=${CRASHDIR}/ui && hostdir=":$db_port/ui"
-	[ -f /www/clash/index.html ] && dbdir=/www/clash && hostdir=/clash
+	if [ -f /www/clash/index.html ];then
+		dbdir=/www/clash
+		hostdir=/clash
+	else
+		dbdir=${CRASHDIR}/ui
+		hostdir=":$db_port/ui"
+	fi
 	#开机自启检测
 	if [ -f /etc/rc.common -a "$(cat /proc/1/comm)" = "procd" ];then
 		[ -n "$(find /etc/rc.d -name '*shellcrash')" ] && autostart=enable || autostart=disable
@@ -103,7 +108,7 @@ ckstatus(){
 	#检查执行权限
 	[ ! -x ${CRASHDIR}/start.sh ] && chmod +x ${CRASHDIR}/start.sh
 	#检查/tmp内核文件
-	for file in `ls -F /tmp | grep -v [/\$] | grep -v ' ' | grep -Ev  ".*[(gz)(zip)(7z)(tar)]$" | grep -iE '^clash$|^clash-linux.*|^mihomo.*|^sing.*box|^clash.meta.*'` ; do 
+	for file in `ls -F /tmp | grep -v [/\$] | grep -v ' ' | grep -Ev  ".*[(gz)(zip)(7z)(tar)]$" | grep -iE 'CrashCore|^clash$|^clash-linux.*|^mihomo.*|^sing.*box|^clash.meta.*'` ; do 
 		file=/tmp/$file
 		chmod +x $file
 		echo -e "发现可用的内核文件： \033[36m$file\033[0m "
@@ -175,7 +180,12 @@ start_core(){
 		core_config=${CRASHDIR}/yamls/config.yaml
 	fi
 	echo -----------------------------------------------
-	if [ -s $core_config -o -n "$Url" -o -n "$Https" ];then
+	if [ ! -s $core_config -a -s $CRASHDIR/configs/providers.cfg ];then
+		echo -e "\033[33m没有找到${crashcore}配置文件，尝试生成providers配置文件！\033[0m"
+		[ "$crashcore" = singboxp ] && coretype=singbox
+		[ "$crashcore" = meta -o "$crashcore" = clashpre ] && coretype=clash
+		source ${CRASHDIR}/getdate.sh && gen_${coretype}_providers
+	elif [ -s $core_config -o -n "$Url" -o -n "$Https" ];then
 		${CRASHDIR}/start.sh start
 		#设置循环检测以判定服务启动是否成功
 		i=1
@@ -917,6 +927,10 @@ localproxy(){ #本机代理
 	[ -w /etc/systemd/system/shellcrash.service -o -w /usr/lib/systemd/system/shellcrash.service -o -x /bin/su ] && local_enh=1
 	[ -f /etc/rc.common -a "$(cat /proc/1/comm)" = "procd" ] && [ -w /etc/passwd ] && local_enh=1
 	echo -----------------------------------------------
+	echo -e "\033[31m注意:\033[0m如果你不了解Linux系统的流量机制及$crashcore内核的流量劫持机制"
+	echo -e "启用此功能将可能导致\033[31m流量回环乃至设备死机\033[0m等严重问题！！！"
+	echo -e "\033[33m如你使用了第三方DNS如smartdns等，请务必禁用此功能或者使用shellcrash用户执行！\033[0m"
+	sleep 1
 	[ -n "$local_enh" ] && {
 		ckcmd iptables && [ -n "$(iptables -m owner --help | grep owner)" ] && echo -e " 1 使用\033[32miptables增强模式\033[0m配置(支持docker,推荐！)"
 		nft add table inet shellcrash 2>/dev/null && echo -e " 2 使用\033[32mnftables增强模式\033[0m配置(支持docker,推荐！)"
@@ -1119,7 +1133,7 @@ normal_set(){ #基础设置
 			echo -e "\033[36m已设为 $redir_mod ！！\033[0m"
 		}
 		[ -n "$(iptables -j TPROXY 2>&1 | grep 'on-port')" ] && sup_tp=1
-		[ -n "$(ls /dev/net/tun)" ] || ip tuntap >/dev/null 2>&1 && sup_tun=1
+		[ -n "$(ls /dev/net/tun 2>/dev/null)" ] || ip tuntap >/dev/null 2>&1 && sup_tun=1
 		nft add table inet shellcrash 2>/dev/null && sup_nft=1 && modprobe nft_tproxy >/dev/null 2>&1 && sup_nft=2
 		echo -----------------------------------------------
 		echo -e "当前代理模式为：\033[47;30m $redir_mod \033[0m；ShellCrash核心为：\033[47;30m $crashcore \033[0m"
@@ -1207,17 +1221,19 @@ normal_set(){ #基础设置
 
 	}
 	set_dns_mod(){
-		[ "$dns_mod" = mix ] && [ "$crashcore" != singbox -o "$crashcore" != singboxp ] && dns_mod=redir_host
 		echo -----------------------------------------------
 		echo -e "当前DNS运行模式为：\033[47;30m $dns_mod \033[0m"
 		echo -e "\033[33m切换模式后需要手动重启服务以生效！\033[0m"
 		echo -----------------------------------------------
 		echo -e " 1 fake-ip模式：   \033[32m响应速度更快\033[0m"
 		echo -e "                   不支持绕过CN-IP功能"
-		echo -e " 2 redir_host模式：\033[32m兼容性更好\033[0m"
-		echo -e "                   需搭配加密DNS使用"
-		echo -e " 3 mix混合模式：   \033[32m内部realip外部fakeip\033[0m"
-		echo -e "                   依赖geosite-cn.(db/srs)数据库"
+		if [ "$crashcore" = singbox -o "$crashcore" = singboxp ];then
+			echo -e " 3 mix混合模式：   \033[32m内部realip外部fakeip\033[0m"
+			echo -e "                   依赖geosite-cn.(db/srs)数据库"
+		else
+			echo -e " 2 redir_host模式：\033[32m兼容性更好\033[0m"
+			echo -e "                   需搭配加密DNS使用"
+		fi
 		echo " 0 返回上级菜单"
 		read -p "请输入对应数字 > " num
 		if [ -z "$num" ]; then
@@ -1461,11 +1477,7 @@ advanced_set(){ #进阶设置
 	1)
 		setipv6
 		advanced_set
-	;;	
-	2)
-		setmeta
-		advanced_set	
-	;;	
+	;;
 	3)
 		setfirewall
 		advanced_set	

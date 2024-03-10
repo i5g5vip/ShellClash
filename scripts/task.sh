@@ -86,27 +86,31 @@ update_core(){ #自动更新内核
 		fi
 	fi
 }
-update_shellcrash(){ #自动更新脚本
+update_scripts(){ #自动更新脚本
 	#检查版本
 	check_update
 	if [ -z "$versionsh" -o "$versionsh" = "versionsh_l" ];then
 		logger "任务【自动更新脚本】中止-未检测到版本更新"
 		exit 1
 	else	
-		${CRASHDIR}/start.sh get_bin ${TMPDIR}/update.tar.gz "bin/update.tar.gz"
+		${CRASHDIR}/start.sh get_bin ${TMPDIR}/clashfm.tar.gz "bin/update.tar.gz"
 		if [ "$?" != "0" ];then
-			rm -rf ${TMPDIR}/update.tar.gz
+			rm -rf ${TMPDIR}/clashfm.tar.gz
 			logger "任务【自动更新内核】出错-下载失败！"
 			return 1
 		else
+			#停止服务
+			${CRASHDIR}/start.sh stop
 			#解压
-			tar -zxf "${TMPDIR}/update.tar.gz" ${tar_para} -C ${CRASHDIR}/
+			tar -zxf "${TMPDIR}/clashfm.tar.gz" ${tar_para} -C ${CRASHDIR}/
 			if [ $? -ne 0 ];then
-				rm -rf ${TMPDIR}/update.tar.gz
+				rm -rf ${TMPDIR}/clashfm.tar.gz
 				logger "任务【自动更新内核】出错-解压失败！"
+				${CRASHDIR}/start.sh start
 				return 1
 			else
 				source ${CRASHDIR}/init.sh >/dev/null
+				${CRASHDIR}/start.sh start
 				return 0
 			fi		
 		fi
@@ -127,22 +131,21 @@ update_mmdb(){ #自动更新数据库
 			if [ "$?" != "0" ];then
 				logger "任务【自动更新数据库文件】更新【$2】下载失败！"
 				rm -rf ${TMPDIR}/$1
-				return 1
 			else
 				mv -f ${TMPDIR}/$1 ${BINDIR}/$1
 				setconfig $geo_v $GeoIP_v
 				logger "任务【自动更新数据库文件】更新【$2】成功！"
-				return 0
 			fi
 		fi
 	}
-	[ -n "${Country_v}" ] && getgeo Country.mmdb Country.mmdb
-	[ -n "${cn_mini_v}" ] && getgeo Country.mmdb cn_mini.mmdb
-	[ -n "${china_ip_list_v}" ] && getgeo cn_ip.txt china_ip_list.txt
-	[ -n "${china_ipv6_list_v}" ] && getgeo cn_ipv6.txt china_ipv6_list.txt
-	[ -n "${geosite_v}" ] && getgeo GeoSite.dat geosite.dat
-	[ -n "${geoip_cn_v}" ] && getgeo geoip.db geoip_cn.db
-	[ -n "${geosite_cn_v}" ] && getgeo geosite.db geosite_cn.db
+	[ -n "${Country_v}" -a -s $CRASHDIR/Country.mmdb ] && getgeo Country.mmdb Country.mmdb
+	[ -n "${cn_mini_v}" -a -s $CRASHDIR/Country.mmdb ] && getgeo Country.mmdb cn_mini.mmdb
+	[ -n "${china_ip_list_v}" -a -s $CRASHDIR/cn_ip.txt ] && getgeo cn_ip.txt china_ip_list.txt
+	[ -n "${china_ipv6_list_v}" -a -s $CRASHDIR/cn_ipv6.txt ] && getgeo cn_ipv6.txt china_ipv6_list.txt
+	[ -n "${geosite_v}" -a -s $CRASHDIR/GeoSite.dat ] && getgeo GeoSite.dat geosite.dat
+	[ -n "${geoip_cn_v}" -a -s $CRASHDIR/geoip.db ] && getgeo geoip.db geoip_cn.db
+	[ -n "${geosite_cn_v}" -a -s $CRASHDIR/geosite.db ] && getgeo geosite.db geosite_cn.db
+	return 0
 }
 reset_firewall(){ #重设透明路由防火墙
 	${CRASHDIR}/start.sh stop_firewall

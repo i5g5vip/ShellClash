@@ -336,11 +336,20 @@ setproxies(){ #自定义clash节点
 }
 gen_clash_providers(){ #生成clash的providers配置文件
 	gen_clash_providers_txt(){ 
+		if [ -n "$(echo $2|grep -E '^./')" ];then
+			local type=file
+			local path=$2
+			local download_url=
+		else
+			local type=http
+			local path="./providers/${1}.yaml"
+			local download_url=$2
+		fi
 		cat >> $TMPDIR/providers/providers.yaml <<EOF
   ${1}:
     type: http
-    url: "${2}"
-    path: ./providers/${1}.yaml
+    url: "$download_url"
+    path: "$path"
     interval: 43200
     health-check:
       enable: true
@@ -348,7 +357,15 @@ gen_clash_providers(){ #生成clash的providers配置文件
       url: "https://www.gstatic.com/generate_204"
       interval: 600
 EOF
-}
+		[ "$crashcore" = 'meta' ] && {
+		[ "$skip_cert" != "未开启" ] && skip_cert_verify='skip-cert-verify: true'
+		cat >> $TMPDIR/providers/providers.yaml <<EOF
+    override:
+      udp: true
+      $skip_cert_verify
+EOF
+		}
+	}
 	if [ -z "$(grep "provider_temp_${coretype}" ${CRASHDIR}/configs/ShellCrash.cfg)" ];then
 		provider_temp_file=$(sed -n "1 p" ${CRASHDIR}/configs/${coretype}_providers.list | awk '{print $2}')
 	else
@@ -392,7 +409,7 @@ EOF
 	cut -c 1- ${TMPDIR}/providers/providers.yaml ${TMPDIR}/providers/proxy-groups.yaml ${TMPDIR}/providers/rules.yaml > ${TMPDIR}/config.yaml
 	rm -rf ${TMPDIR}/providers
 	#调用内核测试
-	${CRASHDIR}/start.sh core_check && ${TMPDIR}/CrashCore -t -d ${BINDIR} -f ${TMPDIR}/config.yaml >/dev/null
+	${CRASHDIR}/start.sh core_check && ${TMPDIR}/CrashCore -t -d ${BINDIR} -f ${TMPDIR}/config.yaml
 	if [ "$?" = 0 ];then
 		echo -e "\033[32m配置文件生成成功！\033[0m"
 		mv -f ${TMPDIR}/config.yaml ${CRASHDIR}/yamls/config.yaml
@@ -409,7 +426,18 @@ EOF
 }
 gen_singbox_providers(){ #生成singbox的providers配置文件
 	gen_singbox_providers_txt(){ 
-		cat >> ${TMPDIR}/providers/providers.json <<EOF
+		if [ -n "$(echo $2|grep -E '^./')" ];then
+			cat >> ${TMPDIR}/providers/providers.json <<EOF
+	{
+      "tag": "${1}",
+      "type": "file",
+      "healthcheck_url": "https://www.gstatic.com/generate_204",
+      "healthcheck_interval": "10m",
+	  "path": "${2}"
+	},
+EOF
+		else
+			cat >> ${TMPDIR}/providers/providers.json <<EOF
 	{
       "tag": "${1}",
       "type": "http",
@@ -417,11 +445,13 @@ gen_singbox_providers(){ #生成singbox的providers配置文件
       "healthcheck_interval": "10m",
       "download_url": "${2}",
       "path": "./providers/${1}.yaml",
-      "download_ua": "clash",
+      "download_ua": "clash.meta",
       "download_interval": "24h",
       "download_detour": "DIRECT"
 	},
 EOF
+		fi
+
 	}
 	if [ -z "$(grep "provider_temp_${coretype}" ${CRASHDIR}/configs/ShellCrash.cfg)" ];then
 		provider_temp_file=$(sed -n "1 p" ${CRASHDIR}/configs/${coretype}_providers.list | awk '{print $2}')
@@ -487,7 +517,8 @@ EOF
 setproviders(){ #自定义providers
 	echo -----------------------------------------------
 	echo -e "\033[33m你可以在这里快捷管理与生成自定义的providers提供者\033[0m"
-	echo -e "\033[33m暂时只支持yaml格式的配置导入\033[0m"
+	echo -e "\033[36m支持在线及本地的Yaml格式配置导入\033[0m"
+	echo -e "\033[33msingboxp内核暂不支持跳过证书验证功能\033[0m"
 	[ -s $CRASHDIR/configs/providers.cfg ] && { 
 		echo -----------------------------------------------
 		echo -e "\033[36m输入对应数字可管理providers提供者\033[0m"
@@ -498,6 +529,7 @@ setproviders(){ #自定义providers
 	echo -e " b \033[32m生成\033[0m基于providers的配置文件"
 	echo -e " c 选择\033[33m规则模版\033[0m"
 	echo -e " d \033[31m清空\033[0mproviders列表"
+	echo -e " e \033[33m清理\033[0mproviders目录"
 	echo -e " 0 返回上级菜单"
 	read -p "请输入对应数字 > " num
 	case $num in
@@ -529,8 +561,8 @@ setproviders(){ #自定义providers
 				fi
 			;;	
 			2)
-				read -p "请输入http(s)格式的providers链接地址 > " link
-				if [ -n "$(echo $link | grep -E '.*\..*')" ] && [ -z "$(grep "$link" $CRASHDIR/configs/providers.cfg)" ];then
+				read -p "请输入providers订阅地址或本地相对路径 > " link
+				if [ -n "$(echo $link | grep -E '.*\..*|^\./')" ] && [ -z "$(grep "$link" $CRASHDIR/configs/providers.cfg)" ];then
 					link=$(echo $link | sed 's/\&/\\\&/g') #特殊字符添加转义
 					sed -i "s|$provider_name $provider_url|$provider_name $link|" $CRASHDIR/configs/providers.cfg
 				else
@@ -541,7 +573,7 @@ setproviders(){ #自定义providers
 				gen_${coretype}_providers $provider_name $provider_url
 			;;	
 			4)
-				sed -i "/$provider_name/d" $CRASHDIR/configs/providers.cfg
+				sed -i "/^$provider_name /d" $CRASHDIR/configs/providers.cfg
 			;;
 			*)
 				errornum
@@ -553,13 +585,16 @@ setproviders(){ #自定义providers
 	;;
 	a)
 		echo -----------------------------------------------
-		read -p "请输入http(s)格式的providers订阅地址 > " link
-		[ -n "$(echo $link | grep -E '.*\..*')" ] && {
+		echo -e "支持填写在线的\033[32mYClash订阅地址\033[0m或者\033[32m本地Clash配置文件\033[0m"
+		echo -e "本地配置文件请放在\033[32m$CRASHDIR\033[0m目录下，并填写相对路径如【\033[32m./providers/test.yaml\033[0m】"
+		echo -----------------------------------------------
+		read -p "请输入providers订阅地址或本地相对路径 > " link
+		[ -n "$(echo $link | grep -E '.*\..*|^\./')" ] && {
 			read -p "请输入代理提供者的名称或者代号(不可重复) > " name
 			[ -n "$name" ] && [ -z "$(grep "name" $CRASHDIR/configs/providers.cfg)" ] && { 
 				echo -----------------------------------------------
 				echo -e "代理提供者：\033[36m$name\033[0m"
-				echo -e "链接地址：\033[32m$link\033[0m"
+				echo -e "链接地址/路径：\033[32m$link\033[0m"
 				read -p "确认添加？(1/0) > " res
 					[ "$res" = 1 ] && {
 						echo "$name $link" >> $CRASHDIR/configs/providers.cfg
@@ -611,6 +646,12 @@ setproviders(){ #自定义providers
 	d)
 		read -p "确认清空全部providers提供者？(1/0) > " res
 		[ "$res" = "1" ] && rm -rf $CRASHDIR/configs/providers.cfg
+		setproviders
+	;;
+	d)
+		echo -e "\033[33m将清空 $CRASHDIR/providers 目录下所有内容\033[0m"
+		read -p "是否继续？(1/0) > " res
+		[ "$res" = "1" ] && rm -rf $CRASHDIR/providers
 		setproviders
 	;;
 	*)
@@ -942,7 +983,7 @@ set_core_config(){ #配置文件功能
 	echo -----------------------------------------------
 	echo -e " 1 在线\033[32m生成$crashcore配置文件\033[0m"
 	echo -e " 2 在线\033[33m获取完整配置文件\033[0m"
-	echo -e " 3 本地\033[32m生成providers配置文件\033[0m(实验性)\033[0m"	
+	echo -e " 3 本地\033[32m生成providers配置文件\033[0m"	
 	echo -e " 4 本地\033[33m上传完整配置文件\033[0m"
 	echo -e " 5 设置\033[36m自动更新\033[0m"
 	echo -e " 6 \033[32m自定义\033[0m配置文件"
@@ -1157,6 +1198,8 @@ setcoretype(){ #手动指定内核类型
 switch_core(){ #clash与singbox内核切换
 	#singbox和clash内核切换时提示是否保留文件
 	[ "$core_new" != "$core_old" ] && {
+		[ "$dns_mod" = "redir_host" ] && [ "$core_old" = "clash" ] && setconfig dns_mod mix #singbox自动切换dns
+		[ "$dns_mod" = "mix" ] && [ "$core_old" = "singbox" ] && setconfig dns_mod fake-ip #singbox自动切换dns
 		echo -e "\033[33m已从$core_old内核切换至$core_new内核\033[0m"
 		echo -e "\033[33m二者Geo数据库及yaml/json配置文件不通用\033[0m"
 		read -p "是否保留相关数据库文件？(1/0) > " res
@@ -1389,7 +1432,7 @@ setcore(){ #内核选择菜单
 	echo -e "2 \033[43;30m SingBox \033[0m：	\033[32m支持全面占用低\033[0m"
 	echo -e " >>\033[32m$singbox_v  	\033[33m不支持providers\033[0m"
 	echo -e "  说明文档：	\033[36;4mhttps://sing-box.sagernet.org\033[0m"
-	echo -e "3 \033[43;30m Mihomo \033[0m：	\033[32m多功能，支持全面\033[0m"
+	echo -e "3 \033[43;30m  Meta  \033[0m：	\033[32m多功能，支持全面\033[0m"
 	echo -e " >>\033[32m$meta_v   	\033[33m内存占用较高\033[0m"
 	echo -e "  说明文档：	\033[36;4mhttps://wiki.metacubex.one\033[0m"
 	echo -e "4 \033[43;30m SingBoxP \033[0m：	\033[32m支持ssr、providers、dns并发……\033[0m"
@@ -1678,6 +1721,9 @@ setgeo(){ #数据库选择菜单
 		[ "$res" = '1' ] && {
 			for file in cn_ip.txt cn_ipv6.txt Country.mmdb GeoSite.dat geoip.db geosite.db ;do
 				rm -rf $CRASHDIR/$file
+			done
+			for var in Country_v cn_mini_v china_ip_list_v china_ipv6_list_v geosite_v geoip_cn_v geosite_cn_v ;do
+				setconfig $var
 			done
 			rm -rf $CRASHDIR/*.srs
 			echo -e "\033[33m所有数据库文件均已清理！\033[0m"
@@ -2031,7 +2077,7 @@ update(){
 	echo -----------------------------------------------
 	echo -e " 1 更新\033[36m管理脚本    \033[33m$versionsh_l\033[0m > \033[32m$version_new \033[36m$release_type\033[0m"
 	echo -e " 2 切换\033[33m内核文件    \033[33m$core_v\033[0m > \033[32m$core_v_new\033[0m"
-	echo -e " 3 更新\033[32m数据库文件\033[0m"
+	echo -e " 3 更新\033[32m数据库文件\033[0m	> \033[32m$GeoIP_v\033[0m"
 	echo -e " 4 安装本地\033[35mDashboard\033[0m面板"
 	echo -e " 5 安装/更新本地\033[33m根证书文件\033[0m"
 	echo -e " 6 查看\033[32mPAC\033[0m自动代理配置"

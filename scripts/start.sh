@@ -181,7 +181,7 @@ mark_time(){ #时间戳
 getlanip(){ #获取局域网host地址
 	i=1
 	while [ "$i" -le "20" ];do
-		host_ipv4=$(ip a 2>&1 | grep -w 'inet' | grep 'global' | grep 'br' | grep -Ev 'iot|peer' | grep -E ' 1(92|0|72)\.' | sed 's/.*inet.//g' | sed 's/br.*$//g' | sed 's/metric.*$//g' ) #ipv4局域网网段
+		host_ipv4=$(ip a 2>&1 | grep -w 'inet' | grep 'global' | grep 'brd' | grep -Ev 'iot|peer' | grep -E ' 1(92|0|72)\.' | sed 's/.*inet.//g' | sed 's/br.*$//g' | sed 's/metric.*$//g' ) #ipv4局域网网段
 		[ "$ipv6_redir" = "已开启" ] && host_ipv6=$(ip a 2>&1 | grep -w 'inet6' | grep -E 'global' | sed 's/.*inet6.//g' | sed 's/scope.*$//g' ) #ipv6公网地址段
 		[ -f  ${TMPDIR}/ShellCrash.log ] && break
 		[ -n "$host_ipv4" -a "$ipv6_redir" != "已开启" ] && break
@@ -319,7 +319,11 @@ get_core_config(){ #下载内核配置文件
 		fi
 	else
 		Https=""
-		[ "$crashcore" = singbox -o "$crashcore" = singboxp ] && check_singbox_config || check_clash_config
+		if [ "$crashcore" = singbox -o "$crashcore" = singboxp ];then
+			check_singbox_config
+		else
+			check_clash_config
+		fi
 		#如果不同则备份并替换文件
 		if [ -s $core_config ];then
 			compare $core_config_new $core_config
@@ -355,7 +359,7 @@ modify_yaml(){ #修饰clash配置文件
 		cat > ${TMPDIR}/dns.yaml <<EOF
 dns:
   enable: true
-  listen: 0.0.0.0:$dns_port
+  listen: :$dns_port
   use-hosts: true
   ipv6: $dns_v6
   default-nameserver:
@@ -382,8 +386,8 @@ EOF
 		}		
 }
 	#域名嗅探配置
-	[ "$sniffer" = "已启用" ] && [ "$crashcore" = "meta" ] && sniffer_set="sniffer: {enable: true, skip-domain: [Mijia Cloud], sniff: {tls: {ports: [443, 8443]}, http: {ports: [80, 8080-8880]}}}"
-	[ "$crashcore" = "clashpre" ] && [ "$dns_mod" = "redir_host" ] && exper="experimental: {ignore-resolve-fail: true, interface-name: en0, sniff-tls-sni: true}"
+	[ "$sniffer" = "已启用" ] && [ "$crashcore" = "meta" ] && sniffer_set="sniffer: {enable: true, parse-pure-ip: true, skip-domain: [Mijia Cloud], sniff: {tls: {ports: [443, 8443]}, http: {ports: [80, 8080-8880]}}}"
+	[ "$crashcore" = "clashpre" ] && [ "$dns_mod" = "redir_host" -o "$sniffer" = "已启用" ] && exper="experimental: {ignore-resolve-fail: true, interface-name: en0, sniff-tls-sni: true}"
 	#生成set.yaml
 	cat > ${TMPDIR}/set.yaml <<EOF
 mixed-port: $mix_port
@@ -579,18 +583,21 @@ EOF
 	[ -z "$dns_direct" ] && dns_direct='223.5.5.5'
 	[ -z "$dns_proxy" ] && dns_proxy='1.0.0.1'
 	[ "$ipv6_dns" = "已开启" ] && strategy='prefer_ipv4' || strategy='ipv4_only'
-	[ "$dns_mod" = "redir_host" ] && final_dns=dns_direct && global_dns=dns_proxy
+	[ "$dns_mod" = "redir_host" ] && {
+		global_dns=dns_proxy
+		direct_dns="{ \"query_type\": [ \"A\", \"AAAA\" ], \"server\": \"dns_direct\" },"
+	}
 	[ "$dns_mod" = "fake-ip" ] && {
-		final_dns=dns_fakeip && global_dns=dns_fakeip
+		global_dns=dns_fakeip
 		fake_ip_filter=$(cat ${CRASHDIR}/configs/fake_ip_filter ${CRASHDIR}/configs/fake_ip_filter.list 2>/dev/null | grep '\.' | awk '{printf "\"%s\", ",$1}' | sed "s/, $//" | sed 's/+/.+/g' | sed 's/*/.*/g')
-		[ -n "$fake_ip_filter" ] && fake_ip_filter="{ \"domain_regex\": [$fake_ip_filter], \"server\": \"local\" },"
+		[ -n "$fake_ip_filter" ] && fake_ip_filter="{ \"domain_regex\": [$fake_ip_filter], \"server\": \"dns_direct\" },"
 	}
 	[ "$dns_mod" = "mix" ] && {
-		final_dns=dns_direct && global_dns=dns_fakeip
+		global_dns=dns_fakeip
 		fake_ip_filter=$(cat ${CRASHDIR}/configs/fake_ip_filter 2>/dev/null | grep '\.' | awk '{printf "\"%s\", ",$1}' | sed "s/, $//" | sed 's/+/.+/g' | sed 's/*/.*/g')
-		[ -n "$fake_ip_filter" ] && fake_ip_filter="{ \"domain_regex\": [$fake_ip_filter], \"server\": \"local\" },"
+		[ -n "$fake_ip_filter" ] && fake_ip_filter="{ \"domain_regex\": [$fake_ip_filter], \"server\": \"dns_direct\" },"
 		if [ -z "$(echo "$core_v" | grep -E '^1\.7.*')" ];then
-			mix_dns="{ \"rule_set\": [\"geosite-cn\"], \"invert\": true, \"server\": \"dns_fakeip\" },"
+			direct_dns="{ \"rule_set\": [\"geosite-cn\"], \"server\": \"dns_direct\" },"
 			#生成add_rule_set.json
 			[ -z "$(cat ${CRASHDIR}/jsons/*.json | grep -Ei '\"tag\" *: *\"geosite-cn\"')" ] && cat > ${TMPDIR}/jsons/add_rule_set.json <<EOF
 {
@@ -607,7 +614,7 @@ EOF
 }
 EOF
 		else
-			mix_dns="{ \"geosite\": [\"cn\"], \"invert\": true, \"server\": \"dns_fakeip\" },"
+			direct_dns="{ \"geosite\": \"geolocation-cn\", \"server\": \"dns_direct\" },"
 		fi
 	}
 	cat > ${TMPDIR}/jsons/dns.json <<EOF
@@ -632,12 +639,12 @@ EOF
 	  { "tag": "local", "address": "local", "detour": "DIRECT" }
 	],
     "rules": [
-	  { "outbound": ["any"], "server": "dns_resolver" },
-	  { "clash_mode": "Global", "server": "$global_dns" },
+	  { "outbound": ["any"], "server": "dns_direct" },
+	  { "clash_mode": "Global", "server": "$global_dns", "rewrite_ttl": 1 },
       { "clash_mode": "Direct", "server": "dns_direct" },
 	  $fake_ip_filter
-	  $mix_dns
-	  { "query_type": [ "A", "AAAA" ], "server": "$final_dns" }
+	  $direct_dns
+	  { "query_type": [ "A", "AAAA" ], "server": "dns_fakeip", "rewrite_ttl": 1 }
 	],
     "final": "dns_direct",
     "independent_cache": true,
@@ -682,7 +689,7 @@ EOF
     {
       "type": "mixed",
       "tag": "mixed-in",
-      "listen": "0.0.0.0",
+      "listen": "::",
       "listen_port": $mix_port,
 	  $userpass
       "sniff": false
@@ -755,7 +762,7 @@ EOF
 }
 EOF
 	#生成自定义规则文件
-	[ -s ${CRASHDIR}/yamls/rules.yaml ] && {
+	[ -n "$(grep -Ev ^# ${CRASHDIR}/yamls/rules.yaml 2>/dev/null)" ] && {
 		cat ${CRASHDIR}/yamls/rules.yaml \
 			| sed '/#.*/d' \
 			| grep -oE '\-.*,.*,.*' \
@@ -773,6 +780,7 @@ EOF
 			| sed 's/$/" },/g' \
 			| sed '1i\{ "route": { "rules": [ ' \
 			| sed '$s/,$/ ] } }/' > ${TMPDIR}/jsons/cust_add_rules.json
+		[ ! -s ${TMPDIR}/jsons/cust_add_rules.json ] && rm -rf ${TMPDIR}/jsons/cust_add_rules.json
 	}
 	#提取配置文件以获得outbounds.json,outbound_providers.json及route.json
 	${TMPDIR}/CrashCore format -c $core_config > ${TMPDIR}/format.json
@@ -1089,7 +1097,7 @@ start_tun(){ #iptables-tun
 		iptables -I FORWARD -p udp --dport 443 -o utun -m comment --comment "ShellCrash-QUIC-REJECT" $set_cn_ip -j REJECT >/dev/null 2>&1 
 		ip6tables -I FORWARD -p udp --dport 443 -o utun -m comment --comment "ShellCrash-QUIC-REJECT" $set_cn_ip6 -j REJECT >/dev/null 2>&1
 	fi
-	modprobe xt_mark >/dev/null 2>&1 && {
+	if [ -n "$(iptables -j MARK 2>&1 | grep 'mark')" ];then
 		i=1
 		while [ -z "$(ip route list |grep utun)" -a "$i" -le 29 ];do
 			sleep 1
@@ -1159,7 +1167,9 @@ start_tun(){ #iptables-tun
 				[ "$1" = "all" ] && ip6tables -t mangle -A PREROUTING -p tcp $ports -j shellcrashv6
 			}
 		fi
-	}
+	else
+		logger "iptables缺少-J MARK功能，放弃启动tun相关防火墙规则！" 31
+	fi
 }
 start_nft(){ #nftables-allinone
 	#获取局域网host地址
@@ -1413,7 +1423,7 @@ web_save(){ #最小化保存面板节点选择
 	done < ${TMPDIR}/web_proxies
 	rm -rf ${TMPDIR}/web_proxies
 	#获取面板设置
-	[ "$crashcore" != singbox ] && get_save http://127.0.0.1:${db_port}/configs > ${TMPDIR}/web_configs
+	#[ "$crashcore" != singbox ] && get_save http://127.0.0.1:${db_port}/configs > ${TMPDIR}/web_configs
 	#对比文件，如果有变动且不为空则写入磁盘，否则清除缓存
 	for file in web_save web_configs ;do
 		if [ -s ${TMPDIR}/${file} ];then
@@ -1427,12 +1437,14 @@ web_save(){ #最小化保存面板节点选择
 web_restore(){ #还原面板选择
 	getconfig
 	#设置循环检测面板端口以判定服务启动是否成功
-	i=1
+	test=""
+ 	i=1
 	while [ -z "$test" -a "$i" -lt 20 ];do
 		sleep 2
 		test=$(get_save http://127.0.0.1:${db_port}/configs | grep -o port)
 		i=$((i+1))
 	done
+ 	sleep 1
 	[ -n "$test" ] && {
 		#发送节点选择数据
 		[ -s ${CRASHDIR}/configs/web_save ] && {
@@ -1446,16 +1458,19 @@ web_restore(){ #还原面板选择
 			done
 		}
 		#还原面板设置
-		[ "$crashcore" != singbox ] && [ -s ${CRASHDIR}/configs/web_configs ] && {
-			sleep 5
-			put_save http://127.0.0.1:${db_port}/configs "$(cat ${CRASHDIR}/configs/web_configs)" PATCH
-		}
+		#[ "$crashcore" != singbox ] && [ -s ${CRASHDIR}/configs/web_configs ] && {
+			#sleep 5
+			#put_save http://127.0.0.1:${db_port}/configs "$(cat ${CRASHDIR}/configs/web_configs)" PATCH
+		#}
 	}
 }
 makehtml(){ #生成面板跳转文件
 	cat > ${BINDIR}/ui/index.html <<EOF
 <!DOCTYPE html>
 <html lang="en">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1469,7 +1484,7 @@ makehtml(){ #生成面板跳转文件
         <a href="https://metacubexd.pages.dev" style="font-size: 24px;">Meta XD面板(推荐)<br></a>
         <a href="https://yacd.metacubex.one" style="font-size: 24px;">Meta YACD面板(推荐)<br></a>
         <a href="https://yacd.haishan.me" style="font-size: 24px;">Clash YACD面板<br></a>
-        <a style="font-size: 18px;"><br>如已安装，请使用Ctrl+F5强制刷新！<br></a>		
+        <a style="font-size: 21px;"><br>如已安装，请刷新此页面！<br></a>		
     </div>
 </body>
 </html
@@ -1545,50 +1560,35 @@ core_check(){ #检查及下载内核文件
 	[ "$start_old" != "已开启" -a "$(cat /proc/1/comm)" = "systemd" ] && restorecon -RF $CRASHDIR 2>/dev/null #修复SELinux权限问题
 	return 0
 }
+core_exchange(){ #升级为高级内核
+	#$1：目标内核  $2：提示语句
+	logger "检测到${2}！将改为使用${1}核心启动！" 33
+	rm -rf ${TMPDIR}/CrashCore
+	rm -rf ${BINDIR}/CrashCore
+	rm -rf ${BINDIR}/CrashCore.tar.gz
+	crashcore=${1}
+	setconfig crashcore ${1}
+	echo -----------------------------------------------
+}
 clash_check(){ #clash启动前检查
 	#检测vless/hysteria协议
-	if [ "$crashcore" != "meta" ] && [ -n "$(cat $core_config | grep -oE 'type: vless|type: hysteria')" ];then
-		echo -----------------------------------------------
-		logger "检测到vless/hysteria协议！将改为使用meta核心启动！" 33
-		rm -rf ${TMPDIR}/CrashCore
-		rm -rf ${BINDIR}/CrashCore
-		rm -rf ${BINDIR}/CrashCore.tar.gz
-		crashcore=meta
-		setconfig crashcore $crashcore
-		echo -----------------------------------------------
-	fi
+	[ "$crashcore" != "meta" ] && [ -n "$(cat $core_config | grep -oE 'type: vless|type: hysteria')" ] && core_exchange meta 'vless/hy协议'
 	#检测是否存在高级版规则或者tun模式
 	if [ "$crashcore" = "clash" ];then
 		[ -n "$(cat $core_config | grep -aiE '^script:|proxy-providers|rule-providers|rule-set')" ] || \
 		[ "$redir_mod" = "混合模式" ] || \
-		[ "$redir_mod" = "Tun模式" ] && {
-			echo -----------------------------------------------
-			logger "检测到高级功能！将改为使用meta核心启动！" 33
-			rm -rf ${TMPDIR}/CrashCore
-			rm -rf ${BINDIR}/CrashCore
-			rm -rf ${BINDIR}/CrashCore.tar.gz
-			crashcore=meta
-			echo -----------------------------------------------
-		}
+		[ "$redir_mod" = "Tun模式" ] && core_exchange meta '当前内核不支持的配置'
 	fi
 	core_check
 	#预下载GeoIP数据库
 	[ -n "$(cat ${CRASHDIR}/yamls/*.yaml | grep -oEi 'geoip')" ] && ckgeo Country.mmdb cn_mini.mmdb
 	#预下载GeoSite数据库
-	[ -n "$(cat ${CRASHDIR}/yamls/*.yaml | grep -oEi 'geosite')" ] && ckgeo GeoSite.dat GeoSite.dat
+	[ -n "$(cat ${CRASHDIR}/yamls/*.yaml | grep -oEi 'geosite')" ] && ckgeo GeoSite.dat geosite.dat
 	return 0
 }
 singbox_check(){ #singbox启动前检查
 	#检测PuerNya专属功能
-	if [ "$crashcore" != "singboxp" ] && [ -n "$(cat ${CRASHDIR}/jsons/*.json | grep -oE 'shadowsocksr|providers')" ];then
-		echo -----------------------------------------------
-		logger "检测到PuerNya内核专属功能，改为使用singboxp内核启动！" 33
-		rm -rf ${TMPDIR}/CrashCore
-		rm -rf ${BINDIR}/CrashCore
-		rm -rf ${BINDIR}/CrashCore.tar.gz
-		crashcore=singboxp		
-		setconfig crashcore $crashcore
-	fi
+	[ "$crashcore" != "singboxp" ] && [ -n "$(cat ${CRASHDIR}/jsons/*.json | grep -oE 'shadowsocksr|providers')" ] && core_exchange singboxp 'PuerNya内核专属功能'
 	core_check
 	#预下载geoip-cn.srs数据库
 	[ -n "$(cat ${CRASHDIR}/jsons/*.json | grep -oEi '"rule_set" *: *"geoip-cn"')" ] && ckgeo geoip-cn.srs srs_geoip_cn.srs
@@ -1745,7 +1745,7 @@ start_error(){ #启动报错
 		${COMMAND} >${TMPDIR}/core_test.log 2>&1 &
 		sleep 2 ; kill $! >/dev/null 2>&1
 	fi
-	error=$(cat $TMPDIR/core_test.log | grep -Eo 'error.*=.*|.*ERROR.*|.*FATAL.*')
+	error=$(cat $TMPDIR/core_test.log | grep -iEo 'error.*=.*|.*ERROR.*|.*FATAL.*')
 	logger "服务启动失败！请查看报错信息！详细信息请查看$TMPDIR/core_test.log" 33
 	logger "$error" 31
 	exit 1
@@ -1774,8 +1774,10 @@ update_config(){ #更新订阅并重启
 hotupdate(){ #热更新订阅
 		getconfig
 		get_core_config
+		core_check
 		modify_$format && \
 		put_save http://127.0.0.1:${db_port}/configs "{\"path\":\"${CRASHDIR}/config.$format\"}"
+		rm -rf ${TMPDIR}/CrashCore
 }
 set_proxy(){ #设置环境变量
 	getconfig
@@ -1805,10 +1807,12 @@ start)
 		elif [ -f /etc/rc.common -a "$(cat /proc/1/comm)" = "procd" ];then
 			/etc/init.d/shellcrash start 
 		elif [ "$USER" = "root" -a "$(cat /proc/1/comm)" = "systemd" ];then
-			FragmentPath=$(systemctl show -p FragmentPath shellcrash | sed 's/FragmentPath=//')
-			[ -f $FragmentPath ] && setconfig ExecStart "$COMMAND >/dev/null" "$FragmentPath"
-			systemctl daemon-reload
-			systemctl start shellcrash.service || start_error
+			bfstart && {
+				FragmentPath=$(systemctl show -p FragmentPath shellcrash | sed 's/FragmentPath=//')
+				[ -f $FragmentPath ] && setconfig ExecStart "$COMMAND >/dev/null" "$FragmentPath"
+				systemctl daemon-reload
+				systemctl start shellcrash.service || start_error
+			}
 		else
 			bfstart && start_old
 		fi
