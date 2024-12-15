@@ -71,9 +71,12 @@ localhost.sec.qq.com
 +.qq.com
 +.tencent.com
 #Game
+#Steam
++.steamcontent.com
 #Nintendo Switch
 +.srv.nintendo.net
 *.n.n.srv.nintendo.net
++.cdn.nintendo.net
 #Sony PlayStation
 +.stun.playstation.net
 #Microsoft Xbox
@@ -129,6 +132,8 @@ ff.dorado.sdo.com
 shark007.net
 #Mijia
 Mijia Cloud
+#Xiaomi
++.market.xiaomi.com
 #招商银行
 +.cmbchina.com
 +.cmbimg.com
@@ -143,3 +148,9 @@ static.adtidy.org
 +.n0808.com
 #T-mobile and Ultra Mobile wifi calling
 +.3gppnetwork.org
+#UU Plugin
++.uu.163.com
+ps.res.netease.com
+#向日葵远程控制
++.oray.com
++.orayimg.com

@@ -34,7 +34,7 @@ tunfix(){
 	mkdir -p /tmp/overlay/work
 	mount -o noatime,lowerdir=${ko_dir},upperdir=/tmp/overlay/upper,workdir=/tmp/overlay/work -t overlay "overlay_mods_only" ${ko_dir}
 	#将tun.ko链接到lib
-	ln -sf $CRASHDIR/tools/tun.ko ${ko_dir}/tun.ko
+	ln -sf $CRASHDIR/tools/tun.ko ${ko_dir}/tun.ko || $CRASHDIR/start.sh loggger "小米Tun模块修复失败！"
 }
 tproxyfix(){
 	sed -i 's/sysctl -w net.bridge.bridge-nf-call-ip/#sysctl -w net.bridge.bridge-nf-call-ip/g' /etc/init.d/qca-nss-ecm
@@ -43,12 +43,10 @@ tproxyfix(){
 }
 init(){
 	#等待启动完成
-	log_file=$(uci get system.@system[0].log_file)
-	local i=0
-	while [ "$i" -lt 20 ]; do
-		sleep 3
-		[ -n "$(grep 'init complete' $log_file)" ] && i=20 || i=$((i + 1))
+	while ! ip a| grep -q lan; do
+		sleep 10
 	done
+	sleep 20
 	#初始化环境变量
 	sed -i "/alias crash/d" $profile
 	sed -i "/alias clash/d" $profile
@@ -64,11 +62,13 @@ init(){
 	#启动服务
 	if [ ! -f $CRASHDIR/.dis_startup ]; then
 		#AX6S/AX6000修复tun功能
-		[ -f $CRASHDIR/configs/tun.ko ] && tunfix
+		[ -s $CRASHDIR/tools/tun.ko ] && tunfix
 		#小米7000/小米万兆修复tproxy
 		[ -f /etc/init.d/qca-nss-ecm ] && [ -n "$(grep 'redir_mod=Tproxy' $CRASHDIR/configs/ShellCrash.cfg )" ] && tproxyfix
+		#自动覆盖根证书文件
+		[ -s $CRASHDIR/tools/ca-certificates.crt ] && cp -f $CRASHDIR/tools/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 		#启动服务
-		/etc/init.d/shellcrash start
+		$CRASHDIR/start.sh start
 		/etc/init.d/shellcrash enable
 	fi
 }
